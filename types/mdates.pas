@@ -1,0 +1,353 @@
+unit MDates;
+
+{This unit is written to provide some Date - Time routines in a modern way.
+Second goal is, to minimize overhead}
+
+{$mode ObjFPC}{$H+}
+{$modeswitch typehelpers}
+//{$modeswitch advancedrecords}
+//{$modeswitch multiscopehelpers}
+{$R+}  //Extremly used for error prevention
+
+interface
+
+//uses
+//  SysUtils, Classes, Types, StrUtils;
+
+type
+  TMDates = Word; //Dates are Days in Moments  MaxDate = 2076-09-09
+
+
+  TMYear           = Type 1900..2076;
+  TMDayOfYear     = Type 1..366;
+  TMDayOfWeek = 1..7;
+  //Renember: The 1st of January, 1900 was a Monday!
+  TMCalWeek        = Type 1..53; //calendar week
+  TMLeapYearCount  = Type 0..(High(TMYear) div 4)
+                       - (High(TMYear) div 100)   //These are not leapyears
+                       + (High(TMYear) div 1000); //But these are!
+
+  { TYearHelper }
+
+  TYearHelper = Type Helper for TMYear
+  private
+    function GetAsDays: TMDates;
+    function GetCalWeekFirst: TMCalWeek;
+    function GetDayOfWeek: TMDayOfWeek;
+    function GetHasDays: TMDayOfYear;
+    function GetHasLeapYears: TMLeapYearCount;
+    function GetIsLeapYear: Boolean;
+    procedure SetAsDays(AValue: TMDates);
+  public
+    //Am I a leapyear?
+    property IsLeapYear: Boolean read GetIsLeapYear;
+    //Count of leapyears since first TMYear
+    property HasLeapYears: TMLeapYearCount read GetHasLeapYears;
+    //Days since the first TMYear
+    property AsDays: TMDates read GetAsDays write SetAsDays;
+    //How many days does the current year have?
+    property HasDays: TMDayOfYear read GetHasDays;
+    //New Year's weekday as a number
+    property DayOfWeek: TMDayOfWeek read GetDayOfWeek;
+    //Week Number at New Year. 1 or 53?
+    property CalWeekFirst: TMCalWeek read GetCalWeekFirst;
+  end;
+
+  TDayName_Short = String[2];
+  TDayNames_Short = Array[TMDayOfWeek] of TDayName_Short;
+
+  { Monthes }
+
+  TMonthEnum = (mJan, mFeb, mMar, mApr, mMay, mJun, mJul, mAug,
+                mSep, mOct, mNov, mDec);
+  TMMonth = Type mJan..mDec;
+  TMonthEnums = Set of TMonthEnum;
+const
+  Monthes_31: TMonthEnums = [mJan, mMar, mMay, mJul, mAug, mOct, mDec];
+  Monthes_30: TMonthEnums = [mApr, mJun, mSep, mNov];
+  Month_Feb : TMonthEnums = [mFeb];
+
+type
+  TMDayOfMonth = Type 1..31;
+
+  { TMonthHelper }
+
+  TMonthHelper = Type Helper for TMMonth
+  private
+    function GetAsDays(Index: TMYear): TMDates;
+    function GetHasDays(Index: TMYear): TMDayOfMonth;
+    procedure SetAsDays(Index: TMYear; AValue: TMDates);
+
+  public
+    // The count of days from current Month
+    property HasDays[Index: TMYear]: TMDayOfMonth read GetHasDays;
+    // TMDates until the 1st day of the specified year and month
+    property AsDays[Index: TMYear]: TMDates read GetAsDays write SetAsDays;
+
+  end;
+
+  TMHour = Type 0..24;
+  TMHours = Type 0..High(TMDates) * 24; // Complete range of TMDates as hours
+
+  { TMDatesHelper }
+
+const
+  WinDayDiff = 2;  //MDate first Date ist 01.01.1900
+                   //The result of DateToStr(0) is "December 30, 1899."
+
+Type
+  TMDatesHelper = Type Helper for TMDates
+  private
+    function GetAsDateTime: TDateTime;
+    function GetAsHours: TMHours;
+    //function GetAsString: ShortString;
+    function GetAsWinDays: Word;
+    function GetAsYear: TMYear;
+    function GetCalWeek: TMCalWeek;
+    function GetDayOfMonth: TMDayOfMonth;
+    function GetDayOfWeek: TMDayOfWeek;
+    function GetDayOfYear: TMDayOfYear;
+    procedure SetAsHours(AValue: TMHours);
+    //procedure SetAsSstring(AValue: ShortString);
+    procedure SetAsTDateTime(AValue: TDateTime);
+    procedure SetAsWinDays(AValue: Word);
+    procedure SetAsYear(AValue: TMYear);
+    procedure SetDayOfMonth(AValue: TMDayOfMonth);
+    procedure SetDayOfYear(AValue: TMDayOfYear);
+  public
+
+
+//ToDo:
+    //class function TRDate.IsValidDate(AYear, AMonth, ADay: Word): Boolean;
+    //function MonthAndDay(var AMonth: TMonth): TMDayOfMonth;
+
+    property DayOfMonth: TMDayOfMonth read GetDayOfMonth write SetDayOfMonth;
+    property DayOfWeek: TMDayOfWeek read GetDayOfWeek; //The 1st stands for Monday and so on
+    property AsWinDays: Word read GetAsWinDays write SetAsWinDays; //For correspondence with TDateTime
+    property AsTDateTime: TDateTime read GetAsDateTime write SetAsTDateTime; //Internal typecasting
+    property AsHours: TMHours read GetAsHours write SetAsHours;
+    property AsYear: TMYear read GetAsYear write SetAsYear; //Set to the first day of given year, get the current year
+    property DayOfYear: TMDayOfYear read GetDayOfYear write SetDayOfYear; //The number of the current day in this year
+    property CalWeek: TMCalWeek read GetCalWeek; //Week number of the current date
+    //property AsString: ShortString read GetAsString write SetAsSstring;
+  end;
+
+
+  TDateNames = Array of String;
+const
+  DateNames :TDateNames = ('Year', 'Month', 'Day');
+type
+  TDateISOStr = String[10]; //e.g. 2024-10-30
+  TDateGerStr = String[10];
+  //TDSArr = Array[0..9] of String;
+
+  //For Time handling
+  TMMin  = Type 0..High(TMHour) * 60;
+  TMMins =  Type 0..High(TMHours) * 60;
+
+
+implementation
+
+{ TMDatesHelper }
+
+function TMDatesHelper.GetAsDateTime: TDateTime;
+begin
+  Result:= Self.AsWinDays;
+end;
+
+function TMDatesHelper.GetAsHours: TMHours;
+begin
+  Result:= Self * 24; //24 hours per day
+end;
+
+//function TMDatesHelper.GetAsString: ShortString;
+//begin
+//  Result:= DateToStr(Self.AsWinDays);
+//end;
+
+function TMDatesHelper.GetAsWinDays: Word;
+begin
+  Result:= Self + WinDayDiff; // 2 Days
+end;
+
+function TMDatesHelper.GetAsYear: TMYear;
+begin
+  Result:= Low(TMYear); //Initialysize
+  Result.AsDays:= Self; //Uses the property of TMYear
+end;
+
+function TMDatesHelper.GetCalWeek: TMCalWeek;
+var
+  Year: TMYear;
+begin
+  Year:= Self.AsYear; //The current year is needed below
+
+  // Berechne die Kalenderwoche basierend auf dem Wochentag des Neujahrs und dem aktuellen Datum
+  Result := ((Year.DayOfWeek // Get the week number of 1st january in current year
+          +   Self - 2) { #todo 1 -oUGerd -cunderstanding : Test me! figure out, why to do this }
+              div 7) + 1;
+end;
+
+function TMDatesHelper.GetDayOfMonth: TMDayOfMonth;
+var
+  Month: TMMonth;
+  Day: TMDayOfYear;
+  Year: TMYear;
+begin
+  Result:= Low(TMDayOfMonth); // Initialize the result to the lowest possible day of the month.
+  Month:= Low(TMMonth);  // Initialize the month to January.
+  Day:= Self.DayOfYear;   // Get the day of the year for the current date.
+  Year:= Self.AsYear; //Current year is needed for calc the Month.HasDays[];
+
+  while Month.HasDays[Year] < Day do
+  begin
+    // Subtract the days in the current month from the total days
+    Day:= Day - Month.HasDays[Year];
+    inc(Month); // Move to the next month.
+  end;
+  Result:= Day;   // Set the result to the calculated day of the month.
+end;
+
+function TMDatesHelper.GetDayOfWeek: TMDayOfWeek;
+begin
+  //The first day of TMDates is 01.01.1900
+  Result:= Self mod High(TMDayOfWeek)
+           + 1; // Day of week is never 0!
+end;
+
+function TMDatesHelper.GetDayOfYear: TMDayOfYear;
+var
+  Year: TMYear;
+begin
+  Year:= Low(TMYear); //Initialize
+  Year.AsDays:= Self; //Get the current year
+  //Remove the sum of all days of the previous years
+  Result:= (Self - Year.AsDays)
+         + 1; //Result connot be 0!
+end;
+
+procedure TMDatesHelper.SetAsHours(AValue: TMHours);
+begin
+  Self:= AValue div 24; //One day per 24 hour. The remainder will be truncated
+end;
+
+procedure TMDatesHelper.SetAsTDateTime(AValue: TDateTime);
+begin
+  //Windays is a word integer. Internal type conversion
+  Self.AsWinDays:= trunc(AValue);
+end;
+
+procedure TMDatesHelper.SetAsWinDays(AValue: Word);
+begin
+  //The lowest date of TMDates is two days later than that of TDateTime
+  Self:= AValue - WinDayDiff;  //Here - 2 days
+end;
+
+procedure TMDatesHelper.SetAsYear(AValue: TMYear);
+begin
+  Self:= AValue.AsDays;  //01.january of AValue
+end;
+
+procedure TMDatesHelper.SetDayOfMonth(AValue: TMDayOfMonth);
+begin
+  Self:= Self - Self.DayOfMonth  //End of the last Month
+       + AValue;
+end;
+
+procedure TMDatesHelper.SetDayOfYear(AValue: TMDayOfYear);
+begin
+  Self:= Self - Self.DayOfYear //Last day of the prior year
+       + AValue;
+end;
+
+{ TYearHelper }
+
+function TYearHelper.GetAsDays: TMDates;
+begin
+  Result:= (Self * 365) + Self.HasLeapYears;
+  inc(Result);//For the first year days are 1!
+end;
+
+function TYearHelper.GetCalWeekFirst: TMCalWeek;
+begin
+  Result:= 1;
+  if Self.DayOfWeek >= 4 {thu} then
+    Result:= 53; //Newyear weekday >= Thursday, year begins with CalWeekFirst 53
+end;
+
+function TYearHelper.GetDayOfWeek: TMDayOfWeek;
+begin
+  Result:= Self.AsDays.DayOfWeek; //Look at TMDates
+end;
+
+function TYearHelper.GetHasDays: TMDayOfYear;
+begin
+  Result:= 365;
+  if self.IsLeapYear then Result:= 366;
+end;
+
+function TYearHelper.GetHasLeapYears: TMLeapYearCount;
+begin
+  Result:= (self div 4)
+         - (Self div 100)   //These are not leapyears
+         + (Self div 400); //But these are!
+end;
+
+function TYearHelper.GetIsLeapYear: Boolean;
+begin
+  Result := (Self mod 4 = 0) and ((Self mod 100 <> 0) or (Self mod 400 = 0));
+end;
+
+procedure TYearHelper.SetAsDays(AValue: TMDates);
+begin
+  Self:= low(TMYear);
+  inc(Self, AValue div 366); //Approximation to avoid loops
+  while AValue > self.HasDays do //Set exact Year
+  begin
+    inc(Self, 1);//Increase Year
+    //Decrease days, while they are lower or equal then the days has the current year
+    AValue:= AValue - Self.AsDays;
+  end
+end;
+
+{ TMonthHelper }
+
+function TMonthHelper.GetAsDays(Index: TMYear): TMDates;
+var
+  TempMonth: TMMonth; //For looping
+begin
+  Result:= Index.AsDays;
+  TempMonth:= Low(TMMonth); //Initializing, date is 1.st of january
+  while self > TempMonth do
+  begin
+    Inc(Result, TempMonth.HasDays[Index]); //Increase result with days of TempMonth
+    inc(TempMonth); //Till TempMonth = current Month
+  end;
+end;
+
+function TMonthHelper.GetHasDays(Index: TMYear): TMDayOfMonth;
+begin
+  Result:= High(TMDayOfMonth); // Long Month = 31 days, in the most cases
+  if self in Monthes_30 then Result:= 30; //Short Month
+  if self in Month_Feb then  //self is february
+  begin
+    if not Index.IsLeapYear then Result:= 28 //normally year
+    else Result:= 29; //Leapyear!
+  end;
+end;
+
+procedure TMonthHelper.SetAsDays(Index: TMYear; AValue: TMDates);
+var
+  TempDays: TMDates;
+begin
+  AValue:= AValue - Index.AsDays; //Cut the year part of the days
+  Self:= Low(TMMonth); //Initializing to january
+  TempDays:= Low(TMDayOfYear); // 1.st january
+  while AValue > TempDays do
+  begin
+    Inc(TempDays, Self.HasDays[Index]); //Inc TempDays with the days of self;
+    Inc(Self); //Inc Monthes to set self
+  end;
+end;
+
+end.
